@@ -27,7 +27,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
+import os, re
 import numpy as np
 import facenet
 
@@ -57,14 +57,20 @@ def get_paths(lfw_dir, pairs):
             path1 = add_extension(os.path.join(lfw_dir, pair[2], pair[2] + '_' + '%04d' % int(pair[3])))
             issame = False
         if os.path.exists(path0) and os.path.exists(path1):    # Only add the pair if both paths exist
-            path_list += (path0,path1)
-            issame_list.append(issame)
+            embed0 = re.sub(r".png", ".npy", path0)
+            embed0 = re.sub(r".jpg", ".npy", embed0)
+            embed1 = re.sub(r".png", ".npy", path1)
+            embed1 = re.sub(r".jpg", ".npy", embed1)
+            if not os.path.exists(embed0) and not os.path.exists(embed1):   # only add the pair if embedding does not exists
+                path_list.append(path0)
+                path_list.append(path1)
+                issame_list.append(issame)
         else:
             nrof_skipped_pairs += 1
     if nrof_skipped_pairs>0:
         print('Skipped %d image pairs' % nrof_skipped_pairs)
     
-    return path_list, issame_list
+    return np.expand_dims(np.array(path_list), 1), issame_list
   
 def add_extension(path):
     if os.path.exists(path+'.jpg'):

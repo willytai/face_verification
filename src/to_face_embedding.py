@@ -31,6 +31,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 import numpy as np
+import check_database as check
 import argparse
 import facenet
 import lfw
@@ -42,6 +43,8 @@ from scipy.optimize import brentq
 from scipy import interpolate
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+config = tf.ConfigProto()
+config.gpu_options.per_process_gpu_memory_fraction = 0.33
 
 
 
@@ -49,14 +52,27 @@ def main(args):
   
     with tf.Graph().as_default():
       
-        with tf.Session() as sess:
+        with tf.Session(config=config) as sess:
             
             # Read the file containing the pairs used for testing
             pairs = lfw.read_pairs(os.path.expanduser(args.lfw_pairs))
 
             # Get the paths for the corresponding images
             paths, actual_issame = lfw.get_paths(os.path.expanduser(args.lfw_dir), pairs)
-            # paths, actual_issame = get_celeba_paths(args.lfw_dir)
+
+            # add path from check_list
+            if args.check_list is not 'None':
+                print ('Reading check_list')
+                paths, actual_issame = check.get_paths(args.lfw_dir, args.check_list, paths, actual_issame)
+
+            # check query_dir, this directory can only contain one query image
+            if args.query_dir is not 'None':
+                paths, actual_issame = check.get_query_path(args.query_dir, paths, actual_issame)
+
+            print ('{} calculation of embeddings remain'.format(paths.shape[0]))
+
+            if paths.shape[0] == 0:
+                sys.exit()
             
             image_paths_placeholder = tf.placeholder(tf.string, shape=(None,1), name='image_paths')
             labels_placeholder = tf.placeholder(tf.int32, shape=(None,1), name='labels')
@@ -83,9 +99,15 @@ def main(args):
             coord = tf.train.Coordinator()
             tf.train.start_queue_runners(coord=coord, sess=sess)
 
-            evaluate(sess, eval_enqueue_op, image_paths_placeholder, labels_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder,
-                embeddings, label_batch, paths, actual_issame, args.lfw_batch_size, args.lfw_nrof_folds, args.distance_metric, args.subtract_mean,
+            # get the best batch size
+            batch_size = check.get_batch_size(args.lfw_batch_size, paths.shape[0])
+            print ('best batch_size: %d' % batch_size)
+
+            embeddings = evaluate(sess, eval_enqueue_op, image_paths_placeholder, labels_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder,
+                embeddings, label_batch, paths, actual_issame, batch_size, args.lfw_nrof_folds, args.distance_metric, args.subtract_mean,
                 args.use_flipped_images, args.use_fixed_image_standardization)
+
+            check.save_embed(paths, embeddings)
 
               
 def evaluate(sess, enqueue_op, image_paths_placeholder, labels_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder,
@@ -98,15 +120,15 @@ def evaluate(sess, enqueue_op, image_paths_placeholder, labels_placeholder, phas
     nrof_flips = 2 if use_flipped_images else 1
     nrof_images = nrof_embeddings * nrof_flips
     labels_array = np.expand_dims(np.arange(0,nrof_images),1)
-    image_paths_array = np.expand_dims(np.repeat(np.array(image_paths),nrof_flips),1)
-    # print (image_paths_array); sys.exit()
+    # image_paths = np.expand_dims(np.repeat(np.array(image_paths),nrof_flips),1)
+    # print (image_paths); sys.exit()
     control_array = np.zeros_like(labels_array, np.int32)
     if use_fixed_image_standardization:
         control_array += np.ones_like(labels_array)*facenet.FIXED_STANDARDIZATION
     if use_flipped_images:
         # Flip every second image
         control_array += (labels_array % 2)*facenet.FLIP
-    sess.run(enqueue_op, {image_paths_placeholder: image_paths_array, labels_placeholder: labels_array, control_placeholder: control_array})
+    sess.run(enqueue_op, {image_paths_placeholder: image_paths, labels_placeholder: labels_array, control_placeholder: control_array})
     
     embedding_size = int(embeddings.get_shape()[1])
     assert nrof_images % batch_size == 0, 'The number of LFW images must be an integer multiple of the LFW batch size'
@@ -131,6 +153,8 @@ def evaluate(sess, enqueue_op, image_paths_placeholder, labels_placeholder, phas
     else:
         embeddings = emb_array
 
+
+    return embeddings
 ###########this is what I added###########
     print ('embedding vector saved to ../data/embeddings.npy')
     np.save('../data/embeddings', embeddings)
@@ -141,8 +165,12 @@ def parse_arguments(argv):
     
     parser.add_argument('lfw_dir', type=str,
         help='Path to the data directory containing aligned LFW face patches.')
+    parser.add_argument('--query_dir', type=str,
+        help='query directory containing one image only.', default='None')
+    parser.add_argument('--check_list', type=str,
+        help='Used when new data are added into the database', default='None')
     parser.add_argument('--lfw_batch_size', type=int,
-        help='Number of images to process in a batch in the LFW test set.', default=200)
+        help='Number of images to process in a batch in the LFW test set.', default=100)
     parser.add_argument('model', type=str, 
         help='Could be either a directory containing the meta_file and ckpt_file or a model protobuf (.pb) file')
     parser.add_argument('--image_size', type=int,
