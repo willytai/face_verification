@@ -16,3 +16,5 @@
 cd src/align/
 python3 align_dataset_mtcnn.py ../../$1 ../../data/lfw_160 --image_size 160 --margin 32 --random_order --gpu_memory_fraction 0.5
 cd ../../
+
+# ./check.sh

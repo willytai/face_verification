@@ -57,7 +57,7 @@ def show_images(images, query, Name, cols = 3, titles = None):
         plt.imshow(image)
         a.set_title(title)
     fig.set_size_inches(np.array(fig.get_size_inches()) * n_images)
-    plt.show()
+    # plt.show()
     plt.savefig('../query/'+Name+'.jpeg')
 
 def cal_ave_dist(query, choices):
@@ -66,7 +66,13 @@ def cal_ave_dist(query, choices):
 
 	for c in choices:
 
-		dist.append(cosine(query, np.load(c)))
+		new_dist = cosine(query, np.load(c))
+
+		if new_dist > 1:
+
+			return new_dist
+
+		dist.append(new_dist)
 
 	return np.array(dist).mean()
 
@@ -111,10 +117,12 @@ def main():
 
 	start_time = time.time()
 
+	print ('Searching...')
+
 	for pp, N in enumerate(names):
 
 		ss = time.time()
-		print ('Checking %s...' % N, end='')
+		print ('\rChecking %s...' % N, end='')
 
 		try:
 			pic = os.listdir(os.path.join(data_path, N))
@@ -140,11 +148,11 @@ def main():
 
 		# 	break
 
-		# break if found a result with cosine distance less than 0.05
-		if top_10[0][1] <= 0.1:
+		# break if found a result with cosine distance less than 0.15
+		if top_10[0][1] <= 0.15:
 			break
 
-		print ('{:.2f}s'.format(time.time()-ss))
+		print ('{:.2f}s'.format(time.time()-ss), end='', flush=True)
 
 
 	print ('')
